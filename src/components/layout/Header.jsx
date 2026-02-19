@@ -2,8 +2,12 @@ import { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 
 const pageTitles = {
-  '/': 'Cocina',
+  '/': 'Dashboard',
+  '/kitchen': 'Cocina',
   '/catalog': 'Catalogo',
+  '/inventory': 'Inventario',
+  '/wallet': 'PokeWallet',
+  '/purchases': 'Compras',
 };
 
 export default function Header() {

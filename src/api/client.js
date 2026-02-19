@@ -42,4 +42,5 @@ export const api = {
   },
   post: (endpoint, body) => request(endpoint, { method: 'POST', body }),
   patch: (endpoint, body) => request(endpoint, { method: 'PATCH', body }),
+  delete: (endpoint) => request(endpoint, { method: 'DELETE' }),
 };

@@ -7,6 +7,7 @@ import KitchenBoard from './pages/KitchenBoard';
 import CatalogManager from './pages/CatalogManager';
 import InventoryManager from './pages/InventoryManager';
 import PokeWallet from './pages/PokeWallet';
+import Purchases from './pages/Purchases';
 
 export default function App() {
   return (
@@ -23,6 +24,7 @@ export default function App() {
             <Route path="/catalog" element={<CatalogManager />} />
             <Route path="/inventory" element={<InventoryManager />} />
             <Route path="/wallet" element={<PokeWallet />} />
+            <Route path="/purchases" element={<Purchases />} />
           </Routes>
         </main>
       </div>
