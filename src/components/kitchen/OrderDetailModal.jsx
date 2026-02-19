@@ -138,6 +138,14 @@ export default function OrderDetailModal({ order, open, onClose, onAdvance, onCa
               <p className="text-xs text-gris">{order.customer?.phone}</p>
               <p className="text-xs text-gris">{order.customer?.email}</p>
               <p className="text-xs text-gris">{order.customer?.address}</p>
+              <p className="text-xs text-gris flex items-center gap-1.5 mt-1">
+                <span className="font-semibold text-negro">Hora de entrega:</span>
+                {order.deliveryTime ? (
+                  <span className="font-bold text-naranja">{order.deliveryTime}</span>
+                ) : (
+                  <span className="text-gris">No indicada</span>
+                )}
+              </p>
               {order.customer?.notes && (
                 <p className="text-xs text-naranja mt-1 italic">
                   Nota: {order.customer.notes}
