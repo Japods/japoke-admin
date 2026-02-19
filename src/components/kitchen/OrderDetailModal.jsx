@@ -4,7 +4,7 @@ import Button from '../ui/Button';
 import BowlDetail from './BowlDetail';
 import { STATUS_CONFIG } from '../../utils/constants';
 import { formatCurrency, formatTime, timeAgo } from '../../utils/formatters';
-import { updatePaymentStatus } from '../../api/orders';
+import { updatePaymentStatus, deleteOrder } from '../../api/orders';
 
 const PAYMENT_LABELS = {
   pago_movil: 'Pago Móvil (Bs)',
@@ -29,9 +29,12 @@ function toWhatsAppUrl(phone, message = '') {
 
 export default function OrderDetailModal({ order, open, onClose, onAdvance, onCancel, onRefresh }) {
   const overlayRef = useRef(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   useEffect(() => {
     if (!open) return;
+    setConfirmDelete(false);
 
     function handleKeyDown(e) {
       if (e.key === 'Escape') onClose();
@@ -52,6 +55,20 @@ export default function OrderDetailModal({ order, open, onClose, onAdvance, onCa
 
   function handleOverlayClick(e) {
     if (e.target === overlayRef.current) onClose();
+  }
+
+  async function handleDelete() {
+    setDeleteLoading(true);
+    try {
+      await deleteOrder(order._id);
+      onClose();
+      onRefresh?.();
+    } catch (err) {
+      alert(err.message || 'Error al eliminar el pedido');
+    } finally {
+      setDeleteLoading(false);
+      setConfirmDelete(false);
+    }
   }
 
   return (
@@ -176,6 +193,46 @@ export default function OrderDetailModal({ order, open, onClose, onAdvance, onCa
               >
                 Cancelar pedido
               </Button>
+            )}
+          </section>
+
+          {/* Delete Order */}
+          <section className="pt-2 border-t border-gris-border">
+            {!confirmDelete ? (
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(true)}
+                className="w-full text-xs text-gris hover:text-error transition-colors py-1 cursor-pointer"
+              >
+                Eliminar pedido permanentemente
+              </button>
+            ) : (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-3 space-y-2">
+                <p className="text-sm font-semibold text-error text-center">
+                  ¿Eliminar el pedido #{order.orderNumber}?
+                </p>
+                <p className="text-xs text-gris text-center">
+                  Se restaurará el stock descontado. Esta acción no se puede deshacer.
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDelete(false)}
+                    disabled={deleteLoading}
+                    className="flex-1 py-2 text-sm border-2 border-gris-border rounded-xl font-semibold hover:bg-gris-light transition-colors cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDelete}
+                    disabled={deleteLoading}
+                    className="flex-1 py-2 text-sm bg-error text-white rounded-xl font-semibold hover:bg-red-700 transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    {deleteLoading ? 'Eliminando...' : 'Sí, eliminar'}
+                  </button>
+                </div>
+              </div>
             )}
           </section>
         </div>
