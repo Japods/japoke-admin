@@ -32,9 +32,11 @@ export default function SupplyForm({ open, onClose, onSubmit, supply }) {
     usagePerPoke: '1',
   });
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     if (open) {
+      setError(null);
       if (supply) {
         setForm({
           name: supply.name || '',
@@ -72,17 +74,25 @@ export default function SupplyForm({ open, onClose, onSubmit, supply }) {
   async function handleSubmit(e) {
     e.preventDefault();
     setSubmitting(true);
+    setError(null);
     try {
-      await onSubmit({
-        ...form,
+      const payload = {
+        name: form.name,
+        description: form.description,
         unitCost: Number(form.unitCost),
-        currentStock: Number(form.currentStock),
         minStock: Number(form.minStock),
+        trackingUnit: form.trackingUnit,
         usagePerPoke: Number(form.usagePerPoke),
-      });
+      };
+      // Solo incluir slug y currentStock en creación
+      if (!isEditing) {
+        payload.slug = form.slug;
+        payload.currentStock = Number(form.currentStock);
+      }
+      await onSubmit(payload);
       onClose();
-    } catch {
-      // handled
+    } catch (err) {
+      setError(err.message || 'Error al guardar el insumo');
     } finally {
       setSubmitting(false);
     }
@@ -91,6 +101,11 @@ export default function SupplyForm({ open, onClose, onSubmit, supply }) {
   return (
     <Modal open={open} onClose={onClose} title={isEditing ? 'Editar Insumo' : 'Nuevo Insumo'} className="max-w-lg">
       <form onSubmit={handleSubmit} className="space-y-4">
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 rounded-lg">
+            {error}
+          </div>
+        )}
         <div>
           <label className="block text-sm font-medium text-negro mb-1">Nombre</label>
           <input
