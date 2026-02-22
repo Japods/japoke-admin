@@ -7,6 +7,7 @@ import {
   getProtectionHistory,
   createWalletTransaction,
   getWalletTransactions,
+  deleteWalletTransaction,
 } from '../api/protection';
 
 function formatBs(amount) {
@@ -56,6 +57,8 @@ export default function PokeWallet() {
   const [historyMeta, setHistoryMeta] = useState({ total: 0, page: 1, totalPages: 1 });
   const [loading, setLoading] = useState(true);
   const [selectedWallet, setSelectedWallet] = useState(null);
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
 
   // Protection form
   const [showProtectionForm, setShowProtectionForm] = useState(false);
@@ -265,6 +268,19 @@ export default function PokeWallet() {
       setUsdExpenseError(err.message || 'Error al registrar gasto');
     } finally {
       setUsdExpenseSubmitting(false);
+    }
+  }
+
+  async function handleDeleteTransaction(id) {
+    setDeletingId(id);
+    try {
+      await deleteWalletTransaction(id);
+      setConfirmingDeleteId(null);
+      await fetchData(historyMeta.page);
+    } catch (err) {
+      alert(err.message || 'Error al eliminar');
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -815,11 +831,49 @@ export default function PokeWallet() {
                   <th className="px-6 py-3 text-xs font-semibold text-gris">Monto</th>
                   <th className="px-6 py-3 text-xs font-semibold text-gris">Destino / Detalle</th>
                   <th className="px-6 py-3 text-xs font-semibold text-gris">Nota / Descripción</th>
+                  <th className="px-6 py-3"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gris-border">
                 {filteredHistory.map((record) => {
                   const badge = RECORD_TYPE_BADGE[record._recordType] || RECORD_TYPE_BADGE.protection;
+
+                  const isWalletTx = record._recordType !== 'protection';
+                  const deleteCell = isWalletTx ? (
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                      {confirmingDeleteId === record._id ? (
+                        <div className="flex items-center justify-end gap-2">
+                          <span className="text-xs text-gris">¿Eliminar?</span>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteTransaction(record._id)}
+                            disabled={deletingId === record._id}
+                            className="text-xs font-semibold text-white bg-error px-2 py-1 rounded-lg hover:bg-red-700 transition-colors cursor-pointer disabled:opacity-50"
+                          >
+                            {deletingId === record._id ? '...' : 'Sí'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmingDeleteId(null)}
+                            className="text-xs font-semibold text-gris hover:text-negro transition-colors cursor-pointer"
+                          >
+                            No
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setConfirmingDeleteId(record._id)}
+                          className="p-1.5 rounded-lg text-gris hover:text-error hover:bg-red-50 transition-colors cursor-pointer"
+                          title="Eliminar transacción"
+                        >
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+                          </svg>
+                        </button>
+                      )}
+                    </td>
+                  ) : <td className="px-4 py-3" />;
 
                   if (record._recordType === 'protection') {
                     return (
@@ -847,6 +901,7 @@ export default function PokeWallet() {
                         <td className="px-6 py-3 text-gris text-xs max-w-[180px] truncate">
                           {record.notes || '—'}
                         </td>
+                        {deleteCell}
                       </tr>
                     );
                   }
@@ -875,6 +930,7 @@ export default function PokeWallet() {
                         <td className="px-6 py-3 text-gris text-xs max-w-[180px] truncate">
                           {record.description}
                         </td>
+                        {deleteCell}
                       </tr>
                     );
                   }
@@ -903,6 +959,7 @@ export default function PokeWallet() {
                         <td className="px-6 py-3 text-gris text-xs max-w-[180px] truncate">
                           {record.description}
                         </td>
+                        {deleteCell}
                       </tr>
                     );
                   }
@@ -925,6 +982,7 @@ export default function PokeWallet() {
                       <td className="px-6 py-3 text-gris text-xs max-w-[180px] truncate">
                         {record.description}
                       </td>
+                      {deleteCell}
                     </tr>
                   );
                 })}

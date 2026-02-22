@@ -19,3 +19,7 @@ export function createWalletTransaction(data) {
 export function getWalletTransactions(params = {}) {
   return api.get('/admin/protection/transactions', params);
 }
+
+export function deleteWalletTransaction(id) {
+  return api.delete(`/admin/protection/transaction/${id}`);
+}
