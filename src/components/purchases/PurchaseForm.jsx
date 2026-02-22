@@ -238,8 +238,8 @@ export default function PurchaseForm({ open, onClose, onSubmit, purchase = null 
           });
         } else {
           const bs = parseFloat(form.totalBS);
-          const bcv = parseFloat(form.bcvRate);
-          const amountUsd = bs && bcv && bcv > 0 ? parseFloat((bs / bcv).toFixed(2)) : 0;
+          const rate = expenseWallet === 'usdt' ? parseFloat(form.usdtRate) : parseFloat(form.bcvRate);
+          const amountUsd = bs && rate && rate > 0 ? parseFloat((bs / rate).toFixed(2)) : 0;
           await createWalletTransaction({
             type: 'usd_expense',
             wallet: expenseWallet,
@@ -712,9 +712,7 @@ export default function PurchaseForm({ open, onClose, onSubmit, purchase = null 
                       <span>Se registrará <strong>{Number(form.totalBS).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Bs</strong> como gasto del pool de Bs</span>
                     ) : (
                       <span>Se registrará <strong>
-                        {form.bcvRate && parseFloat(form.bcvRate) > 0
-                          ? `$${(parseFloat(form.totalBS) / parseFloat(form.bcvRate)).toFixed(2)}`
-                          : '—'}
+                        {expenseWallet === 'usdt' ? (usdtAmt || '—') : (usd || '—')}
                       </strong> como gasto de {expenseWallet === 'usdt' ? 'Binance USDT' : 'Efectivo USD'}</span>
                     )}
                   </div>
