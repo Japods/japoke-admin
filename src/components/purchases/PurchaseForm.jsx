@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import { getStockableItems, getLatestRates } from '../../api/purchases';
+import { createWalletTransaction } from '../../api/protection';
 
 const UNITS = ['kg', 'g', 'l', 'ml', 'unidad', 'caja', 'paquete'];
 
@@ -68,6 +69,11 @@ export default function PurchaseForm({ open, onClose, onSubmit, purchase = null 
   const [error, setError] = useState(null);
   const [stockable, setStockable] = useState({ items: [], supplies: [] });
 
+  // Wallet expense
+  const [registerAsExpense, setRegisterAsExpense] = useState(false);
+  const [expenseType, setExpenseType] = useState('bs'); // 'bs' | 'usd'
+  const [expenseWallet, setExpenseWallet] = useState('usdt'); // 'usdt' | 'efectivo_usd'
+
   const isEdit = !!purchase;
   const { usd, usdtAmt } = calcTotals(form.totalBS, form.bcvRate, form.usdtRate);
 
@@ -124,6 +130,9 @@ export default function PurchaseForm({ open, onClose, onSubmit, purchase = null 
       setLines([]);
     }
     setError(null);
+    setRegisterAsExpense(false);
+    setExpenseType('bs');
+    setExpenseWallet('usdt');
   }, [purchase, open]);
 
   // Auto-calcula totalBS desde las lineas
@@ -217,6 +226,30 @@ export default function PurchaseForm({ open, onClose, onSubmit, purchase = null 
       };
 
       await onSubmit(payload);
+
+      if (registerAsExpense && !isEdit) {
+        const expenseDescription = [form.supplier, form.description].filter(Boolean).join(' · ') || 'Compra';
+        if (expenseType === 'bs') {
+          await createWalletTransaction({
+            type: 'bs_expense',
+            amountBs: Number(form.totalBS),
+            description: expenseDescription,
+            date: form.date,
+          });
+        } else {
+          const bs = parseFloat(form.totalBS);
+          const bcv = parseFloat(form.bcvRate);
+          const amountUsd = bs && bcv && bcv > 0 ? parseFloat((bs / bcv).toFixed(2)) : 0;
+          await createWalletTransaction({
+            type: 'usd_expense',
+            wallet: expenseWallet,
+            amountUsd,
+            description: expenseDescription,
+            date: form.date,
+          });
+        }
+      }
+
       onClose();
     } catch (err) {
       setError(err.message);
@@ -578,6 +611,118 @@ export default function PurchaseForm({ open, onClose, onSubmit, purchase = null 
             className="w-full px-3 py-2 border border-gris-border rounded-xl text-sm focus:ring-2 focus:ring-naranja/30 focus:border-naranja outline-none transition-all resize-none"
           />
         </div>
+
+        {/* Registrar como gasto en wallet — solo en modo creación */}
+        {!isEdit && (
+          <div className="mt-4 border border-gris-border rounded-xl overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setRegisterAsExpense((v) => !v)}
+              className="w-full flex items-center justify-between px-4 py-3 bg-gris-light/50 hover:bg-gris-light transition-colors cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                <div className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-colors ${registerAsExpense ? 'bg-naranja border-naranja' : 'border-gris-border bg-white'}`}>
+                  {registerAsExpense && (
+                    <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                </div>
+                <span className="text-sm font-medium text-negro">Registrar como gasto en PokeWallet</span>
+              </div>
+              <svg
+                className={`w-4 h-4 text-gris transition-transform ${registerAsExpense ? 'rotate-180' : ''}`}
+                fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            {registerAsExpense && (
+              <div className="px-4 py-4 space-y-3 border-t border-gris-border">
+                {/* Tipo de gasto */}
+                <div>
+                  <p className="text-xs text-gris font-medium mb-2">¿Cómo pagaste esta compra?</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setExpenseType('bs')}
+                      className={`p-2.5 rounded-xl border-2 text-sm font-medium transition-all cursor-pointer text-left ${
+                        expenseType === 'bs'
+                          ? 'border-red-400 bg-red-50 text-red-700'
+                          : 'border-gris-border text-gris hover:border-gris'
+                      }`}
+                    >
+                      <p className="font-semibold">Gasto Bs</p>
+                      <p className="text-[11px] opacity-70">Pagado del pool de bolívares</p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setExpenseType('usd')}
+                      className={`p-2.5 rounded-xl border-2 text-sm font-medium transition-all cursor-pointer text-left ${
+                        expenseType === 'usd'
+                          ? 'border-orange-400 bg-orange-50 text-orange-700'
+                          : 'border-gris-border text-gris hover:border-gris'
+                      }`}
+                    >
+                      <p className="font-semibold">Gasto USD</p>
+                      <p className="text-[11px] opacity-70">Pagado de una wallet USD</p>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Wallet selector — solo para USD */}
+                {expenseType === 'usd' && (
+                  <div>
+                    <p className="text-xs text-gris font-medium mb-2">¿De qué wallet?</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setExpenseWallet('usdt')}
+                        className={`p-2.5 rounded-xl border-2 text-sm font-medium transition-all cursor-pointer ${
+                          expenseWallet === 'usdt'
+                            ? 'border-blue-500 bg-blue-50 text-blue-700'
+                            : 'border-gris-border text-gris hover:border-gris'
+                        }`}
+                      >
+                        Binance USDT
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setExpenseWallet('efectivo_usd')}
+                        className={`p-2.5 rounded-xl border-2 text-sm font-medium transition-all cursor-pointer ${
+                          expenseWallet === 'efectivo_usd'
+                            ? 'border-green-500 bg-green-50 text-green-700'
+                            : 'border-gris-border text-gris hover:border-gris'
+                        }`}
+                      >
+                        Efectivo USD
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Resumen del gasto */}
+                {form.totalBS && (
+                  <div className={`rounded-xl px-3 py-2 text-xs flex items-center gap-2 ${expenseType === 'bs' ? 'bg-red-50 text-red-700' : 'bg-orange-50 text-orange-700'}`}>
+                    <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    {expenseType === 'bs' ? (
+                      <span>Se registrará <strong>{Number(form.totalBS).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Bs</strong> como gasto del pool de Bs</span>
+                    ) : (
+                      <span>Se registrará <strong>
+                        {form.bcvRate && parseFloat(form.bcvRate) > 0
+                          ? `$${(parseFloat(form.totalBS) / parseFloat(form.bcvRate)).toFixed(2)}`
+                          : '—'}
+                      </strong> como gasto de {expenseWallet === 'usdt' ? 'Binance USDT' : 'Efectivo USD'}</span>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Aviso de stock */}
         {lines.some((l) => l.refId) && (

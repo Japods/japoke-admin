@@ -4,7 +4,13 @@ import Button from '../ui/Button';
 import BowlDetail from './BowlDetail';
 import { STATUS_CONFIG } from '../../utils/constants';
 import { formatCurrency, formatTime, timeAgo } from '../../utils/formatters';
-import { updatePaymentStatus, deleteOrder } from '../../api/orders';
+import {
+  updatePaymentStatus,
+  updatePaymentDetails,
+  addSplitPayment,
+  updateSplitPaymentStatus,
+  deleteOrder,
+} from '../../api/orders';
 
 const PAYMENT_LABELS = {
   pago_movil: 'Pago Móvil (Bs)',
@@ -18,9 +24,10 @@ const PAYMENT_STATUS_LABELS = {
   rejected: { label: 'Rechazado', color: 'text-error bg-error-light' },
 };
 
+const PAYMENT_METHODS = ['pago_movil', 'efectivo_usd', 'binance_usdt'];
+
 function toWhatsAppUrl(phone, message = '') {
   if (!phone) return null;
-  // Convierte 04XX... a 584XX... (Venezuela)
   const digits = phone.replace(/\D/g, '');
   const intl = digits.startsWith('0') ? '58' + digits.slice(1) : digits;
   const encoded = message ? `?text=${encodeURIComponent(message)}` : '';
@@ -183,6 +190,9 @@ export default function OrderDetailModal({ order, open, onClose, onAdvance, onCa
             <PaymentSection order={order} onRefresh={onRefresh} />
           )}
 
+          {/* Split Payment */}
+          <SplitPaymentSection order={order} onRefresh={onRefresh} />
+
           {/* Actions */}
           <section className="flex gap-3 pt-2">
             {config?.nextStatus && (
@@ -251,8 +261,22 @@ export default function OrderDetailModal({ order, open, onClose, onAdvance, onCa
 
 function PaymentSection({ order, onRefresh }) {
   const [loading, setLoading] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [editData, setEditData] = useState({});
+  const [editError, setEditError] = useState('');
   const p = order.payment;
   const statusConfig = PAYMENT_STATUS_LABELS[p.status] || PAYMENT_STATUS_LABELS.pending;
+
+  function openEdit() {
+    setEditData({
+      method: p.method || 'pago_movil',
+      amountBs: p.amountBs ?? '',
+      amountUsd: p.amountUsd ?? '',
+      referenceId: p.referenceId || '',
+    });
+    setEditError('');
+    setEditMode(true);
+  }
 
   async function handlePaymentAction(newStatus) {
     setLoading(true);
@@ -260,8 +284,27 @@ function PaymentSection({ order, onRefresh }) {
       await updatePaymentStatus(order._id, newStatus);
       onRefresh?.();
     } catch (err) {
-      console.error('[Payment] Error updating status:', err);
       alert('Error al actualizar estado de pago: ' + (err.message || 'Error desconocido'));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleEditSubmit(e) {
+    e.preventDefault();
+    setLoading(true);
+    setEditError('');
+    try {
+      await updatePaymentDetails(order._id, {
+        method: editData.method,
+        amountBs: editData.amountBs !== '' ? Number(editData.amountBs) : undefined,
+        amountUsd: editData.amountUsd !== '' ? Number(editData.amountUsd) : undefined,
+        referenceId: editData.referenceId,
+      });
+      setEditMode(false);
+      onRefresh?.();
+    } catch (err) {
+      setEditError(err.message || 'Error al guardar');
     } finally {
       setLoading(false);
     }
@@ -269,73 +312,339 @@ function PaymentSection({ order, onRefresh }) {
 
   return (
     <section>
-      <h3 className="font-heading font-bold text-sm text-negro mb-2">Pago</h3>
-      <div className="bg-white border border-gris-border rounded-xl p-3 space-y-2">
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-medium text-negro">
-            {PAYMENT_LABELS[p.method] || p.method}
-          </span>
-          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${statusConfig.color}`}>
-            {statusConfig.label}
-          </span>
-        </div>
-
-        <div className="grid grid-cols-3 gap-2 text-center py-2">
-          <div>
-            <p className="text-[10px] text-gris">EUR</p>
-            <p className="text-sm font-semibold text-negro">{formatCurrency(p.amountEur)}</p>
-          </div>
-          <div>
-            <p className="text-[10px] text-gris">Bs</p>
-            <p className="text-sm font-semibold text-negro">
-              {p.amountBs ? Number(p.amountBs).toLocaleString('es-VE', { minimumFractionDigits: 2 }) : '—'}
-            </p>
-          </div>
-          <div>
-            <p className="text-[10px] text-gris">USD/USDT</p>
-            <p className="text-sm font-semibold text-negro">
-              {p.amountUsd ? `$${Number(p.amountUsd).toFixed(2)}` : '—'}
-            </p>
-          </div>
-        </div>
-
-        {p.referenceId && (
-          <div className="text-xs">
-            <span className="text-gris">Ref: </span>
-            <span className="text-negro font-medium">{p.referenceId}</span>
-          </div>
-        )}
-
-        {p.rates && (
-          <div className="flex gap-3 text-[10px] text-gris pt-1 border-t border-gris-border/50">
-            <span>EUR BCV: {p.rates.euroBcv?.toFixed(2)}</span>
-            <span>USD BCV: {p.rates.dolarBcv?.toFixed(2)}</span>
-            <span>Paralelo: {p.rates.dolarParalelo?.toFixed(2)}</span>
-          </div>
-        )}
-
-        {p.status === 'pending' && (
-          <div className="flex gap-2 pt-2">
-            <Button
-              size="sm"
-              variant="primary"
-              className="flex-1"
-              onClick={() => handlePaymentAction('verified')}
-              loading={loading}
-            >
-              Verificar pago
-            </Button>
-            <Button
-              size="sm"
-              variant="danger"
-              onClick={() => handlePaymentAction('rejected')}
-              loading={loading}
-            >
-              Rechazar
-            </Button>
-          </div>
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="font-heading font-bold text-sm text-negro">Pago principal</h3>
+        {!editMode && (
+          <button
+            type="button"
+            onClick={openEdit}
+            className="text-xs text-naranja hover:underline font-medium cursor-pointer"
+          >
+            Editar pago
+          </button>
         )}
       </div>
+
+      {editMode ? (
+        <form onSubmit={handleEditSubmit} className="bg-white border border-naranja/30 rounded-xl p-3 space-y-3">
+          <div>
+            <label className="text-xs text-gris font-medium block mb-1">Método</label>
+            <select
+              value={editData.method}
+              onChange={(e) => setEditData({ ...editData, method: e.target.value })}
+              className="w-full border border-gris-border rounded-lg px-3 py-2 text-sm text-negro focus:outline-none focus:ring-2 focus:ring-naranja/30 focus:border-naranja"
+            >
+              {PAYMENT_METHODS.map((m) => (
+                <option key={m} value={m}>{PAYMENT_LABELS[m]}</option>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-xs text-gris font-medium block mb-1">Monto Bs</label>
+              <input
+                type="number"
+                step="0.01"
+                value={editData.amountBs}
+                onChange={(e) => setEditData({ ...editData, amountBs: e.target.value })}
+                className="w-full border border-gris-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-naranja/30 focus:border-naranja"
+                placeholder="0.00"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-gris font-medium block mb-1">Monto USD</label>
+              <input
+                type="number"
+                step="0.01"
+                value={editData.amountUsd}
+                onChange={(e) => setEditData({ ...editData, amountUsd: e.target.value })}
+                className="w-full border border-gris-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-naranja/30 focus:border-naranja"
+                placeholder="0.00"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-gris font-medium block mb-1">Referencia</label>
+            <input
+              type="text"
+              value={editData.referenceId}
+              onChange={(e) => setEditData({ ...editData, referenceId: e.target.value })}
+              className="w-full border border-gris-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-naranja/30 focus:border-naranja"
+              placeholder="Número de referencia"
+            />
+          </div>
+          {editError && <p className="text-xs text-error font-medium">{editError}</p>}
+          <div className="flex gap-2">
+            <Button type="submit" size="sm" className="flex-1" loading={loading}>
+              Guardar cambios
+            </Button>
+            <Button type="button" size="sm" variant="outline" onClick={() => setEditMode(false)}>
+              Cancelar
+            </Button>
+          </div>
+        </form>
+      ) : (
+        <div className="bg-white border border-gris-border rounded-xl p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-negro">
+              {PAYMENT_LABELS[p.method] || p.method}
+            </span>
+            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${statusConfig.color}`}>
+              {statusConfig.label}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2 text-center py-2">
+            <div>
+              <p className="text-[10px] text-gris">EUR</p>
+              <p className="text-sm font-semibold text-negro">{formatCurrency(p.amountEur)}</p>
+            </div>
+            <div>
+              <p className="text-[10px] text-gris">Bs</p>
+              <p className="text-sm font-semibold text-negro">
+                {p.amountBs ? Number(p.amountBs).toLocaleString('es-VE', { minimumFractionDigits: 2 }) : '—'}
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] text-gris">USD/USDT</p>
+              <p className="text-sm font-semibold text-negro">
+                {p.amountUsd ? `$${Number(p.amountUsd).toFixed(2)}` : '—'}
+              </p>
+            </div>
+          </div>
+
+          {p.referenceId && (
+            <div className="text-xs">
+              <span className="text-gris">Ref: </span>
+              <span className="text-negro font-medium">{p.referenceId}</span>
+            </div>
+          )}
+
+          {p.rates && (
+            <div className="flex gap-3 text-[10px] text-gris pt-1 border-t border-gris-border/50">
+              <span>EUR BCV: {p.rates.euroBcv?.toFixed(2)}</span>
+              <span>USD BCV: {p.rates.dolarBcv?.toFixed(2)}</span>
+              <span>Paralelo: {p.rates.dolarParalelo?.toFixed(2)}</span>
+            </div>
+          )}
+
+          {p.status === 'pending' && (
+            <div className="flex gap-2 pt-2">
+              <Button
+                size="sm"
+                variant="primary"
+                className="flex-1"
+                onClick={() => handlePaymentAction('verified')}
+                loading={loading}
+              >
+                Verificar pago
+              </Button>
+              <Button
+                size="sm"
+                variant="danger"
+                onClick={() => handlePaymentAction('rejected')}
+                loading={loading}
+              >
+                Rechazar
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function SplitPaymentSection({ order, onRefresh }) {
+  const [loading, setLoading] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [formData, setFormData] = useState({
+    method: 'efectivo_usd',
+    amountBs: '',
+    amountUsd: '',
+    referenceId: '',
+  });
+  const [formError, setFormError] = useState('');
+
+  const sp = order.splitPayment;
+  const hasSplit = sp && sp.method;
+  const canAdd = !hasSplit && order.status !== 'cancelled';
+
+  async function handleAddSubmit(e) {
+    e.preventDefault();
+    setLoading(true);
+    setFormError('');
+    try {
+      await addSplitPayment(order._id, {
+        method: formData.method,
+        amountBs: formData.amountBs !== '' ? Number(formData.amountBs) : undefined,
+        amountUsd: formData.amountUsd !== '' ? Number(formData.amountUsd) : undefined,
+        referenceId: formData.referenceId,
+      });
+      setShowAddForm(false);
+      onRefresh?.();
+    } catch (err) {
+      setFormError(err.message || 'Error al agregar pago');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleStatusUpdate(newStatus) {
+    setLoading(true);
+    try {
+      await updateSplitPaymentStatus(order._id, newStatus);
+      onRefresh?.();
+    } catch (err) {
+      alert('Error al actualizar estado: ' + (err.message || 'Error desconocido'));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (!hasSplit && !canAdd) return null;
+
+  return (
+    <section>
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="font-heading font-bold text-sm text-negro">Pago secundario</h3>
+        {canAdd && !showAddForm && (
+          <button
+            type="button"
+            onClick={() => {
+              const primaryMethod = order.payment?.method;
+              const defaultMethod = primaryMethod === 'pago_movil' ? 'efectivo_usd' : 'pago_movil';
+              setFormData({ method: defaultMethod, amountBs: '', amountUsd: '', referenceId: '' });
+              setFormError('');
+              setShowAddForm(true);
+            }}
+            className="text-xs text-naranja hover:underline font-medium cursor-pointer"
+          >
+            + Agregar pago dividido
+          </button>
+        )}
+      </div>
+
+      {showAddForm && (
+        <form onSubmit={handleAddSubmit} className="bg-white border border-naranja/30 rounded-xl p-3 space-y-3">
+          <div>
+            <label className="text-xs text-gris font-medium block mb-1">Método</label>
+            <select
+              value={formData.method}
+              onChange={(e) => setFormData({ ...formData, method: e.target.value })}
+              className="w-full border border-gris-border rounded-lg px-3 py-2 text-sm text-negro focus:outline-none focus:ring-2 focus:ring-naranja/30 focus:border-naranja"
+            >
+              {PAYMENT_METHODS.filter((m) => m !== order.payment?.method).map((m) => (
+                <option key={m} value={m}>{PAYMENT_LABELS[m]}</option>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-xs text-gris font-medium block mb-1">Monto Bs</label>
+              <input
+                type="number"
+                step="0.01"
+                value={formData.amountBs}
+                onChange={(e) => setFormData({ ...formData, amountBs: e.target.value })}
+                className="w-full border border-gris-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-naranja/30 focus:border-naranja"
+                placeholder="0.00"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-gris font-medium block mb-1">Monto USD</label>
+              <input
+                type="number"
+                step="0.01"
+                value={formData.amountUsd}
+                onChange={(e) => setFormData({ ...formData, amountUsd: e.target.value })}
+                className="w-full border border-gris-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-naranja/30 focus:border-naranja"
+                placeholder="0.00"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-gris font-medium block mb-1">Referencia</label>
+            <input
+              type="text"
+              value={formData.referenceId}
+              onChange={(e) => setFormData({ ...formData, referenceId: e.target.value })}
+              className="w-full border border-gris-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-naranja/30 focus:border-naranja"
+              placeholder="Número de referencia"
+            />
+          </div>
+          {formError && <p className="text-xs text-error font-medium">{formError}</p>}
+          <div className="flex gap-2">
+            <Button type="submit" size="sm" className="flex-1" loading={loading}>
+              Agregar pago
+            </Button>
+            <Button type="button" size="sm" variant="outline" onClick={() => setShowAddForm(false)}>
+              Cancelar
+            </Button>
+          </div>
+        </form>
+      )}
+
+      {hasSplit && (() => {
+        const statusConfig = PAYMENT_STATUS_LABELS[sp.status] || PAYMENT_STATUS_LABELS.pending;
+        return (
+          <div className="bg-white border border-gris-border rounded-xl p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-negro">
+                {PAYMENT_LABELS[sp.method] || sp.method}
+              </span>
+              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${statusConfig.color}`}>
+                {statusConfig.label}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-center py-2">
+              {sp.amountBs != null && (
+                <div>
+                  <p className="text-[10px] text-gris">Bs</p>
+                  <p className="text-sm font-semibold text-negro">
+                    {Number(sp.amountBs).toLocaleString('es-VE', { minimumFractionDigits: 2 })}
+                  </p>
+                </div>
+              )}
+              {sp.amountUsd != null && (
+                <div>
+                  <p className="text-[10px] text-gris">USD/USDT</p>
+                  <p className="text-sm font-semibold text-negro">
+                    ${Number(sp.amountUsd).toFixed(2)}
+                  </p>
+                </div>
+              )}
+            </div>
+            {sp.referenceId && (
+              <div className="text-xs">
+                <span className="text-gris">Ref: </span>
+                <span className="text-negro font-medium">{sp.referenceId}</span>
+              </div>
+            )}
+            {sp.status === 'pending' && (
+              <div className="flex gap-2 pt-2">
+                <Button
+                  size="sm"
+                  variant="primary"
+                  className="flex-1"
+                  onClick={() => handleStatusUpdate('verified')}
+                  loading={loading}
+                >
+                  Verificar pago
+                </Button>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  onClick={() => handleStatusUpdate('rejected')}
+                  loading={loading}
+                >
+                  Rechazar
+                </Button>
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </section>
   );
 }

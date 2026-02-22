@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useOrders } from '../hooks/useOrders';
 import { useSound } from '../hooks/useSound';
 import KanbanBoard from '../components/kitchen/KanbanBoard';
@@ -9,12 +9,20 @@ import ConfirmDialog from '../components/ui/ConfirmDialog';
 import Spinner from '../components/ui/Spinner';
 import { STATUS_CONFIG } from '../utils/constants';
 
+function getTodayParams() {
+  const now = new Date();
+  const from = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+  const to = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).toISOString();
+  return { from, to, limit: 200 };
+}
+
 export default function KitchenBoard() {
   const [viewMode, setViewMode] = useState('kanban');
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [newOrders, setNewOrders] = useState([]);
   const [confirm, setConfirm] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [listRefreshKey, setListRefreshKey] = useState(0);
 
   const { play } = useSound();
 
@@ -23,9 +31,17 @@ export default function KitchenBoard() {
     play();
   }, [play]);
 
+  const todayParams = useMemo(() => getTodayParams(), []);
+
   const { orders, loading, error, advanceStatus, cancelOrder, refetch } = useOrders({
     onNewOrder: handleNewOrder,
+    params: todayParams,
   });
+
+  function refetchAll() {
+    refetch();
+    setListRefreshKey((k) => k + 1);
+  }
 
   function openAdvanceConfirm(order, targetStatus) {
     const config = STATUS_CONFIG[order.status];
@@ -71,6 +87,7 @@ export default function KitchenBoard() {
     try {
       await confirm.action();
       setConfirm(null);
+      setListRefreshKey((k) => k + 1);
     } catch {
       // Error handled by hook
     } finally {
@@ -105,7 +122,9 @@ export default function KitchenBoard() {
       {/* View toggle */}
       <div className="flex items-center justify-between mb-4">
         <p className="text-sm text-gris">
-          {orders.length} {orders.length === 1 ? 'pedido' : 'pedidos'}
+          {viewMode === 'kanban'
+            ? `${orders.length} ${orders.length === 1 ? 'pedido' : 'pedidos'} hoy`
+            : ''}
         </p>
         <div className="flex gap-1 bg-white rounded-xl p-1 border border-gris-border">
           <button
@@ -146,7 +165,7 @@ export default function KitchenBoard() {
         />
       ) : (
         <OrderListView
-          orders={orders}
+          refreshKey={listRefreshKey}
           onAdvance={(order) => openAdvanceConfirm(order)}
           onCancel={openCancelConfirm}
           onOrderClick={setSelectedOrder}
@@ -160,7 +179,7 @@ export default function KitchenBoard() {
         onAdvance={(order) => openAdvanceConfirm(order)}
         onCancel={openCancelConfirm}
         onRefresh={() => {
-          refetch();
+          refetchAll();
           setSelectedOrder(null);
         }}
       />

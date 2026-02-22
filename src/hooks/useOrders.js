@@ -2,16 +2,17 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { getOrders, updateOrderStatus } from '../api/orders';
 import { POLLING_INTERVAL } from '../utils/constants';
 
-export function useOrders({ onNewOrder } = {}) {
+export function useOrders({ onNewOrder, params = {} } = {}) {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const knownIdsRef = useRef(new Set());
   const isFirstFetchRef = useRef(true);
+  const paramsRef = useRef(params);
 
   const fetchOrders = useCallback(async () => {
     try {
-      const data = await getOrders();
+      const data = await getOrders(paramsRef.current);
       const list = data.orders || data.data || data || [];
 
       if (isFirstFetchRef.current) {
