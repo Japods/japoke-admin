@@ -12,7 +12,6 @@ import Spinner from '../components/ui/Spinner';
 
 const TABS = [
   { id: 'stock', label: 'Stock' },
-  { id: 'purchases', label: 'Compras' },
   { id: 'supplies', label: 'Insumos' },
   { id: 'history', label: 'Historial' },
 ];
@@ -110,19 +109,7 @@ export default function InventoryManager() {
             onAdjust={openAdjust}
           />
         )}
-        {activeTab === 'purchases' && (
-          <div className="p-6">
-            <div className="flex justify-end mb-4">
-              <Button onClick={() => setPurchaseOpen(true)} size="sm">
-                + Registrar Compra
-              </Button>
-            </div>
-            <MovementHistory
-              movements={movements.movements.filter((m) => m.type === 'purchase')}
-              pagination={movements.pagination}
-            />
-          </div>
-        )}
+
         {activeTab === 'supplies' && (
           <SupplyTable
             supplies={supplies}
