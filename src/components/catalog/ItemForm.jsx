@@ -39,15 +39,15 @@ export default function ItemForm({ open, onClose, onSubmit, item = null, categor
         name: item.name || '',
         category: item.category?._id || item.category || '',
         tier: item.tier || '',
-        portionSize: item.portionSize || '',
-        extraPrice: item.extraPrice || '',
-        costPerUnit: item.costPerUnit || '',
+        portionSize: item.portionSize ?? '',
+        extraPrice: item.extraPrice ?? '',
+        costPerUnit: item.costPerUnit ?? '',
         isTrackable: item.isTrackable ?? false,
         trackingUnit: item.trackingUnit || 'g',
-        currentStock: item.currentStock?.toString() || '0',
-        minStock: item.minStock?.toString() || '0',
+        currentStock: item.currentStock?.toString() ?? '0',
+        minStock: item.minStock?.toString() ?? '0',
         isAvailable: item.isAvailable ?? true,
-        displayOrder: item.displayOrder || 0,
+        displayOrder: item.displayOrder ?? 0,
       });
     } else {
       setForm(INITIAL_STATE);
@@ -71,14 +71,23 @@ export default function ItemForm({ open, onClose, onSubmit, item = null, categor
     try {
       const data = {
         ...form,
-        portionSize: form.portionSize ? Number(form.portionSize) : undefined,
-        extraPrice: form.extraPrice ? Number(form.extraPrice) : undefined,
-        costPerUnit: form.costPerUnit ? Number(form.costPerUnit) : undefined,
+        portionSize: form.portionSize !== '' ? Number(form.portionSize) : undefined,
+        extraPrice: form.extraPrice !== '' ? Number(form.extraPrice) : undefined,
+        costPerUnit: form.costPerUnit !== '' ? Number(form.costPerUnit) : undefined,
         currentStock: Number(form.currentStock),
         minStock: Number(form.minStock),
         displayOrder: Number(form.displayOrder),
         tier: form.tier || undefined,
       };
+      if (!isEdit) {
+        data.slug = form.name
+          .toLowerCase()
+          .trim()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/\s+/g, '-')
+          .replace(/[^a-z0-9-]/g, '');
+      }
       await onSubmit(data);
       onClose();
     } catch (err) {
