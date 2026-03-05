@@ -9,7 +9,7 @@ import SalesChart from '../components/dashboard/SalesChart';
 import PopularPokeTypes from '../components/dashboard/PopularPokeTypes';
 import CostAnalysisTable from '../components/dashboard/CostAnalysisTable';
 import WalletQuickView from '../components/dashboard/WalletQuickView';
-import { getStoreStatus, setStoreStatus } from '../api/settings';
+import { getStoreStatus, setStoreStatus, getMaxDiscount, setMaxDiscount } from '../api/settings';
 
 function getDefaultDateRange() {
   const now = new Date();
@@ -26,9 +26,18 @@ export default function Dashboard() {
   const [dateFilter, setDateFilter] = useState(getDefaultDateRange);
   const [isOpen, setIsOpen] = useState(null);
   const [toggling, setToggling] = useState(false);
+  const [maxDiscount, setMaxDiscountState] = useState(15);
+  const [discountInput, setDiscountInput] = useState('15');
+  const [savingDiscount, setSavingDiscount] = useState(false);
 
   useEffect(() => {
-    getStoreStatus().then((d) => setIsOpen(d.isOpen)).catch(() => setIsOpen(false));
+    getStoreStatus().then((d) => {
+      setIsOpen(d.isOpen);
+      if (d.maxDiscountPct != null) {
+        setMaxDiscountState(d.maxDiscountPct);
+        setDiscountInput(String(d.maxDiscountPct));
+      }
+    }).catch(() => setIsOpen(false));
   }, []);
 
   async function handleToggle() {
@@ -38,6 +47,18 @@ export default function Dashboard() {
       setIsOpen(result.isOpen);
     } finally {
       setToggling(false);
+    }
+  }
+
+  async function handleSaveDiscount() {
+    const pct = Number(discountInput);
+    if (isNaN(pct) || pct < 0 || pct > 100) return;
+    setSavingDiscount(true);
+    try {
+      const result = await setMaxDiscount(pct);
+      setMaxDiscountState(result.maxDiscountPct);
+    } finally {
+      setSavingDiscount(false);
     }
   }
 
@@ -113,6 +134,35 @@ export default function Dashboard() {
           </button>
         </div>
       )}
+
+      {/* Max discount control */}
+      <div className="rounded-xl border border-gris-border bg-white px-5 py-4 flex items-center justify-between gap-4">
+        <div>
+          <p className="font-heading font-bold text-negro text-sm">Descuento máximo USD</p>
+          <p className="text-xs text-gris">
+            Limita el % de descuento que se aplica al pagar en USD/USDT (actual: {maxDiscount}%)
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <input
+            type="number"
+            min="0"
+            max="100"
+            value={discountInput}
+            onChange={(e) => setDiscountInput(e.target.value)}
+            className="w-20 px-3 py-2 border border-gris-border rounded-lg text-sm text-center font-semibold"
+          />
+          <span className="text-sm text-gris font-medium">%</span>
+          <button
+            type="button"
+            onClick={handleSaveDiscount}
+            disabled={savingDiscount || Number(discountInput) === maxDiscount}
+            className="px-4 py-2 bg-naranja hover:bg-naranja/90 text-white rounded-lg text-sm font-semibold transition-all cursor-pointer disabled:opacity-50"
+          >
+            {savingDiscount ? '...' : 'Guardar'}
+          </button>
+        </div>
+      </div>
 
       {/* Top bar: Date filter + Exchange rates in balanced grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
