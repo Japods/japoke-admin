@@ -37,8 +37,25 @@ export default function OrderCard({ order, onAdvance, onCancel, onClick, isDragg
             {order.customer?.name}
           </p>
         </div>
-        <Badge status={order.status} />
+        <div className="flex flex-col items-end gap-1">
+          <Badge status={order.status} />
+          {order.isCourtesy && (
+            <span className="text-[10px] font-bold text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded-full">
+              CORTESIA
+            </span>
+          )}
+        </div>
       </div>
+
+      {/* Payment status indicator */}
+      {!order.isCourtesy && order.payment?.status === 'pending' && (
+        <div className="flex items-center gap-1 mb-2 px-2 py-1 bg-red-50 border border-red-200 rounded-lg">
+          <svg className="w-3.5 h-3.5 text-red-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+          </svg>
+          <span className="text-[10px] font-bold text-red-600">SIN PAGAR</span>
+        </div>
+      )}
 
       <div className="flex flex-col gap-1 mb-3">
         <div className="flex items-center gap-2 text-xs text-gris">

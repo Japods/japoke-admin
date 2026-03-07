@@ -8,8 +8,8 @@ export function updateOrderStatus(id, status) {
   return api.patch(`/admin/orders/${id}/status`, { status });
 }
 
-export function updatePaymentStatus(id, paymentStatus) {
-  return api.patch(`/admin/orders/${id}/payment`, { paymentStatus });
+export function updatePaymentStatus(id, paymentStatus, recalculateRates = false) {
+  return api.patch(`/admin/orders/${id}/payment`, { paymentStatus, recalculateRates });
 }
 
 export function updatePaymentDetails(id, data) {
@@ -22,6 +22,18 @@ export function addSplitPayment(id, data) {
 
 export function updateSplitPaymentStatus(id, status) {
   return api.patch(`/admin/orders/${id}/split-payment/status`, { status });
+}
+
+export function setCourtesy(id, isCourtesy, reason = '') {
+  return api.patch(`/admin/orders/${id}/courtesy`, { isCourtesy, reason });
+}
+
+export function getUnpaidOrders() {
+  return api.get('/admin/orders-unpaid');
+}
+
+export function setDeliveryFree(id, deliveryFree) {
+  return api.patch(`/admin/orders/${id}/delivery-free`, { deliveryFree });
 }
 
 export function deleteOrder(id) {

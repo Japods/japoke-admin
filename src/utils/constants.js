@@ -8,7 +8,7 @@ export const STATUS_CONFIG = {
     borderColor: 'border-warning',
     dotColor: 'bg-warning',
     nextStatus: 'confirmed',
-    nextLabel: 'Confirmar',
+    nextLabel: 'Confirmar pedido',
     canCancel: true,
   },
   confirmed: {
@@ -76,5 +76,5 @@ export const PROTEIN_TIERS = [
   { value: 'premium', label: 'Premium' },
 ];
 
-export const POLLING_INTERVAL = 7000;
+export const POLLING_INTERVAL = 60000;
 export const DELIVERED_LIMIT = 10;

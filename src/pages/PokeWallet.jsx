@@ -4,10 +4,9 @@ import Spinner from '../components/ui/Spinner';
 import {
   getProtectionSummary,
   createProtection,
-  getProtectionHistory,
   createWalletTransaction,
-  getWalletTransactions,
   deleteWalletTransaction,
+  getUnifiedHistory,
 } from '../api/protection';
 
 function formatBs(amount) {
@@ -105,33 +104,23 @@ export default function PokeWallet() {
 
   const fetchData = useCallback(async (page = 1) => {
     try {
-      const [summaryRes, historyRes, txRes] = await Promise.all([
+      const [summaryRes, historyRes] = await Promise.all([
         getProtectionSummary(),
-        getProtectionHistory({ page, limit: 15 }),
-        getWalletTransactions({ page, limit: 15 }),
+        getUnifiedHistory({ page, limit: 15 }),
       ]);
       setSummary(summaryRes.data);
 
-      // Merge and sort both histories by date descending
-      const protectionRecords = (historyRes.records || []).map((r) => ({
+      const records = (historyRes.records || []).map((r) => ({
         ...r,
-        _recordType: 'protection',
-        _sortDate: r.protectedAt,
-      }));
-      const txRecords = (txRes.records || []).map((r) => ({
-        ...r,
-        _recordType: r.type,
+        _recordType: r.recordType,
         _sortDate: r.date,
       }));
-      const combined = [...protectionRecords, ...txRecords].sort(
-        (a, b) => new Date(b._sortDate) - new Date(a._sortDate)
-      );
 
-      setHistory(combined);
+      setHistory(records);
       setHistoryMeta({
-        total: (historyRes.total || 0) + (txRes.total || 0),
+        total: historyRes.totalCount || 0,
         page,
-        totalPages: Math.max(historyRes.totalPages || 1, txRes.totalPages || 1),
+        totalPages: historyRes.totalPages || 1,
       });
     } catch {
       // silent

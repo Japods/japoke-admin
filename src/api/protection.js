@@ -23,3 +23,7 @@ export function getWalletTransactions(params = {}) {
 export function deleteWalletTransaction(id) {
   return api.delete(`/admin/protection/transaction/${id}`);
 }
+
+export function getUnifiedHistory(params = {}) {
+  return api.get('/admin/protection/unified-history', params);
+}

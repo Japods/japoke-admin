@@ -35,10 +35,28 @@ export function useOrders({ onNewOrder, params = {} } = {}) {
     }
   }, [onNewOrder]);
 
+  // Smart polling: pause when tab is hidden, fetch immediately when visible again
   useEffect(() => {
     fetchOrders();
-    const interval = setInterval(fetchOrders, POLLING_INTERVAL);
-    return () => clearInterval(interval);
+    let interval = setInterval(fetchOrders, POLLING_INTERVAL);
+
+    function handleVisibility() {
+      if (document.hidden) {
+        clearInterval(interval);
+        interval = null;
+      } else {
+        // Tab became visible: fetch immediately and resume polling
+        fetchOrders();
+        interval = setInterval(fetchOrders, POLLING_INTERVAL);
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, [fetchOrders]);
 
   const advanceStatus = useCallback(async (orderId, nextStatus) => {

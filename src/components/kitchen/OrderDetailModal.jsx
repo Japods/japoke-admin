@@ -10,6 +10,8 @@ import {
   addSplitPayment,
   updateSplitPaymentStatus,
   deleteOrder,
+  setCourtesy,
+  setDeliveryFree,
 } from '../../api/orders';
 
 const PAYMENT_LABELS = {
@@ -34,10 +36,50 @@ function toWhatsAppUrl(phone, message = '') {
   return `https://wa.me/${intl}${encoded}`;
 }
 
+function buildOrderSummary(order) {
+  const name = order.customer?.name?.split(' ')[0] || '';
+  const bowls = (order.items || [])
+    .map((b, i) => {
+      const proteins = (b.proteins || []).map((p) => p.name).join(', ');
+      return `  ${i + 1}. ${b.pokeTypeName}${proteins ? ` (${proteins})` : ''}`;
+    })
+    .join('\n');
+  return { name, bowls };
+}
+
+function buildWhatsAppMessages(order, deliveryAmountBs) {
+  const { name, bowls } = buildOrderSummary(order);
+  const total = order.total?.toFixed(2);
+
+  return {
+    confirmed: `¡Hola ${name}! 🥢 Tu pedido *#${order.orderNumber}* ha sido confirmado.\n\n` +
+      `📋 *Resumen:*\n${bowls}\n\n` +
+      `💰 *Total: ${total} €*\n\n` +
+      `Ya estamos organizando todo para preparar tu poke. ¡Te avisaremos cuando esté listo!`,
+
+    ready: `¡${name}, tu pedido *#${order.orderNumber}* está listo! 🎉\n\n` +
+      `Ya puedes esperar al repartidor en la dirección indicada. ¡Que lo disfrutes!`,
+
+    deliveryCost: deliveryAmountBs
+      ? `Hola ${name}, tu pedido *#${order.orderNumber}* tiene un costo de delivery de *${Number(deliveryAmountBs).toLocaleString('es-VE', { minimumFractionDigits: 2 })} Bs*.\n\n` +
+        `Se pagará por *Pago Móvil* al momento de la entrega. Te enviaremos los datos cuando el repartidor esté en camino.`
+      : null,
+  };
+}
+
+const WA_ICON = (
+  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+  </svg>
+);
+
 export default function OrderDetailModal({ order, open, onClose, onAdvance, onCancel, onRefresh }) {
   const overlayRef = useRef(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [courtesyLoading, setCourtesyLoading] = useState(false);
+  const [showCourtesyForm, setShowCourtesyForm] = useState(false);
+  const [courtesyReason, setCourtesyReason] = useState('');
 
   useEffect(() => {
     if (!open) return;
@@ -59,6 +101,37 @@ export default function OrderDetailModal({ order, open, onClose, onAdvance, onCa
   if (!open || !order) return null;
 
   const config = STATUS_CONFIG[order.status];
+
+  async function handleToggleCourtesy() {
+    if (order.isCourtesy) {
+      // Remove courtesy
+      setCourtesyLoading(true);
+      try {
+        await setCourtesy(order._id, false, '');
+        onRefresh?.();
+      } catch (err) {
+        alert('Error: ' + (err.message || 'Error desconocido'));
+      } finally {
+        setCourtesyLoading(false);
+      }
+    } else {
+      setShowCourtesyForm(true);
+      setCourtesyReason('');
+    }
+  }
+
+  async function handleConfirmCourtesy() {
+    setCourtesyLoading(true);
+    try {
+      await setCourtesy(order._id, true, courtesyReason);
+      setShowCourtesyForm(false);
+      onRefresh?.();
+    } catch (err) {
+      alert('Error: ' + (err.message || 'Error desconocido'));
+    } finally {
+      setCourtesyLoading(false);
+    }
+  }
 
   function handleOverlayClick(e) {
     if (e.target === overlayRef.current) onClose();
@@ -88,11 +161,21 @@ export default function OrderDetailModal({ order, open, onClose, onAdvance, onCa
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-gris-border px-5 py-4 z-10">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <h2 className="font-heading font-bold text-lg text-negro">
                 Pedido #{order.orderNumber}
               </h2>
               <Badge status={order.status} />
+              {order.isCourtesy && (
+                <span className="text-[10px] font-bold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full">
+                  CORTESIA
+                </span>
+              )}
+              {!order.isCourtesy && order.payment?.status === 'pending' && (
+                <span className="text-[10px] font-bold text-red-700 bg-red-100 px-2 py-0.5 rounded-full">
+                  SIN PAGAR
+                </span>
+              )}
             </div>
             <button
               onClick={onClose}
@@ -121,30 +204,26 @@ export default function OrderDetailModal({ order, open, onClose, onAdvance, onCa
         <div className="p-5 space-y-5">
           {/* Customer Info */}
           <section>
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="font-heading font-bold text-sm text-negro">Cliente</h3>
-              {order.customer?.phone && (
-                <a
-                  href={toWhatsAppUrl(
-                    order.customer.phone,
-                    `Hola ${order.customer.name}, tu pedido Japoke #${order.orderNumber} está listo 🥢`
-                  )}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-[#25D366] hover:bg-[#1ebe5d] text-white text-xs font-semibold rounded-lg transition-colors"
-                >
-                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
-                  </svg>
-                  WhatsApp
-                </a>
-              )}
-            </div>
+            <h3 className="font-heading font-bold text-sm text-negro mb-2">Cliente</h3>
             <div className="bg-dorado-light rounded-xl p-3 space-y-1">
               <p className="text-sm font-medium text-negro">{order.customer?.name}</p>
               <p className="text-xs text-gris">{order.customer?.phone}</p>
               <p className="text-xs text-gris">{order.customer?.email}</p>
               <p className="text-xs text-gris">{order.customer?.address}</p>
+              {order.customer?.mapUrl && (
+                <a
+                  href={order.customer.mapUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 mt-1 px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold rounded-lg transition-colors"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+                  </svg>
+                  Ver en Google Maps
+                </a>
+              )}
               <p className="text-xs text-gris flex items-center gap-1.5 mt-1">
                 <span className="font-semibold text-negro">Hora de entrega:</span>
                 {order.deliveryTime ? (
@@ -173,17 +252,55 @@ export default function OrderDetailModal({ order, open, onClose, onAdvance, onCa
             </div>
           </section>
 
-          {/* Totals */}
-          <section className="bg-gris-light rounded-xl p-3">
-            <div className="flex justify-between text-sm mb-1">
+          {/* Totals + Delivery */}
+          <section className="bg-gris-light rounded-xl p-3 space-y-2">
+            <div className="flex justify-between text-sm">
               <span className="text-gris">Subtotal</span>
               <span className="text-negro">{formatCurrency(order.subtotal)}</span>
             </div>
+            {(order.deliveryCostBs > 0 || order.deliveryFree) && (
+              <div className="flex justify-between text-sm">
+                <span className="text-gris">Delivery</span>
+                <span className={order.deliveryFree ? 'text-blue-600 font-medium' : 'text-negro'}>
+                  {order.deliveryFree ? 'Gratis' : `${Number(order.deliveryCostBs).toLocaleString('es-VE', { minimumFractionDigits: 2 })} Bs`}
+                </span>
+              </div>
+            )}
             <div className="flex justify-between text-base font-bold pt-2 border-t border-gris-border">
               <span className="text-negro">Total</span>
               <span className="text-naranja">{formatCurrency(order.total)}</span>
             </div>
           </section>
+
+          {/* Primary Actions */}
+          {(config?.nextStatus || config?.canCancel) && (
+            <section className="flex gap-3">
+              {config?.nextStatus && (
+                <Button
+                  variant="primary"
+                  className="flex-1"
+                  onClick={() => onAdvance?.(order)}
+                >
+                  {config.nextLabel}
+                </Button>
+              )}
+              {config?.canCancel && (
+                <Button
+                  variant="danger"
+                  onClick={() => onCancel?.(order)}
+                >
+                  Cancelar pedido
+                </Button>
+              )}
+            </section>
+          )}
+
+          {/* WhatsApp Notifications */}
+          {order.customer?.phone && (
+            <WhatsAppSection order={order} />
+          )}
+
+          <hr className="border-gris-border" />
 
           {/* Payment Info */}
           {order.payment && order.payment.method && (
@@ -193,29 +310,71 @@ export default function OrderDetailModal({ order, open, onClose, onAdvance, onCa
           {/* Split Payment */}
           <SplitPaymentSection order={order} onRefresh={onRefresh} />
 
-          {/* Actions */}
-          <section className="flex gap-3 pt-2">
-            {config?.nextStatus && (
-              <Button
-                variant="primary"
-                className="flex-1"
-                onClick={() => onAdvance?.(order)}
-              >
-                {config.nextLabel}
-              </Button>
-            )}
-            {config?.canCancel && (
-              <Button
-                variant="danger"
-                onClick={() => onCancel?.(order)}
-              >
-                Cancelar pedido
-              </Button>
-            )}
-          </section>
+          {/* Delivery Cost */}
+          <DeliveryCostSection order={order} onRefresh={onRefresh} />
 
-          {/* Delete Order */}
-          <section className="pt-2 border-t border-gris-border">
+          <hr className="border-gris-border" />
+
+          {/* Secondary Actions */}
+          <section className="space-y-2">
+            {/* Courtesy */}
+            {order.isCourtesy ? (
+              <div className="bg-purple-50 border border-purple-200 rounded-xl p-3">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm font-semibold text-purple-700">Orden de cortesia</span>
+                  <button
+                    type="button"
+                    onClick={handleToggleCourtesy}
+                    disabled={courtesyLoading}
+                    className="text-xs text-purple-600 hover:underline font-medium cursor-pointer disabled:opacity-50"
+                  >
+                    Quitar cortesia
+                  </button>
+                </div>
+                {order.courtesyReason && (
+                  <p className="text-xs text-purple-600 italic">Motivo: {order.courtesyReason}</p>
+                )}
+                <p className="text-[10px] text-gris mt-1">No contabiliza como venta ni en PokeWallet</p>
+              </div>
+            ) : showCourtesyForm ? (
+              <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 space-y-2">
+                <p className="text-sm font-semibold text-purple-700">Marcar como cortesia</p>
+                <p className="text-xs text-gris">No contabilizara como venta. Se descuenta inventario pero no genera ingreso.</p>
+                <input
+                  type="text"
+                  value={courtesyReason}
+                  onChange={(e) => setCourtesyReason(e.target.value)}
+                  placeholder="Motivo (ej: publicidad IG, cortesia amigo)"
+                  className="w-full border border-gris-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300 focus:border-purple-400"
+                />
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    className="flex-1 !bg-purple-600 hover:!bg-purple-700"
+                    onClick={handleConfirmCourtesy}
+                    loading={courtesyLoading}
+                  >
+                    Confirmar cortesia
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setShowCourtesyForm(false)}>
+                    Cancelar
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={handleToggleCourtesy}
+                className="w-full flex items-center justify-center gap-2 py-2 text-xs text-purple-600 hover:bg-purple-50 rounded-lg transition-colors cursor-pointer"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 11.25v8.25a1.5 1.5 0 01-1.5 1.5H5.25a1.5 1.5 0 01-1.5-1.5v-8.25M12 4.875A2.625 2.625 0 109.375 7.5H12m0-2.625V7.5m0-2.625A2.625 2.625 0 1114.625 7.5H12m0 0V21m-8.625-9.75h18c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125h-18c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
+                </svg>
+                Marcar como cortesia
+              </button>
+            )}
+
+            {/* Delete */}
             {!confirmDelete ? (
               <button
                 type="button"
@@ -264,6 +423,7 @@ function PaymentSection({ order, onRefresh }) {
   const [editMode, setEditMode] = useState(false);
   const [editData, setEditData] = useState({});
   const [editError, setEditError] = useState('');
+  const [recalcRates, setRecalcRates] = useState(true);
   const p = order.payment;
   const statusConfig = PAYMENT_STATUS_LABELS[p.status] || PAYMENT_STATUS_LABELS.pending;
 
@@ -281,7 +441,7 @@ function PaymentSection({ order, onRefresh }) {
   async function handlePaymentAction(newStatus) {
     setLoading(true);
     try {
-      await updatePaymentStatus(order._id, newStatus);
+      await updatePaymentStatus(order._id, newStatus, recalcRates && newStatus === 'verified');
       onRefresh?.();
     } catch (err) {
       alert('Error al actualizar estado de pago: ' + (err.message || 'Error desconocido'));
@@ -429,24 +589,35 @@ function PaymentSection({ order, onRefresh }) {
           )}
 
           {p.status === 'pending' && (
-            <div className="flex gap-2 pt-2">
-              <Button
-                size="sm"
-                variant="primary"
-                className="flex-1"
-                onClick={() => handlePaymentAction('verified')}
-                loading={loading}
-              >
-                Verificar pago
-              </Button>
-              <Button
-                size="sm"
-                variant="danger"
-                onClick={() => handlePaymentAction('rejected')}
-                loading={loading}
-              >
-                Rechazar
-              </Button>
+            <div className="space-y-2 pt-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={recalcRates}
+                  onChange={(e) => setRecalcRates(e.target.checked)}
+                  className="rounded border-gris-border text-naranja focus:ring-naranja accent-naranja"
+                />
+                <span className="text-xs text-gris">Recalcular con tasa actual al verificar</span>
+              </label>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="primary"
+                  className="flex-1"
+                  onClick={() => handlePaymentAction('verified')}
+                  loading={loading}
+                >
+                  Verificar pago
+                </Button>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  onClick={() => handlePaymentAction('rejected')}
+                  loading={loading}
+                >
+                  Rechazar
+                </Button>
+              </div>
             </div>
           )}
         </div>
@@ -645,6 +816,182 @@ function SplitPaymentSection({ order, onRefresh }) {
           </div>
         );
       })()}
+    </section>
+  );
+}
+
+function WhatsAppSection({ order }) {
+  const [deliveryAmount, setDeliveryAmount] = useState('');
+  const [showDeliveryInput, setShowDeliveryInput] = useState(false);
+
+  const phone = order.customer?.phone;
+  const messages = buildWhatsAppMessages(order, deliveryAmount);
+
+  const buttons = [
+    {
+      key: 'confirmed',
+      label: 'Pedido confirmado',
+      show: ['pending', 'confirmed'].includes(order.status),
+      message: messages.confirmed,
+    },
+    {
+      key: 'ready',
+      label: 'Pedido listo',
+      show: ['preparing', 'ready'].includes(order.status),
+      message: messages.ready,
+    },
+  ];
+
+  const visibleButtons = buttons.filter((b) => b.show);
+
+  return (
+    <section>
+      <h3 className="font-heading font-bold text-sm text-negro mb-2">Notificar por WhatsApp</h3>
+      <div className="space-y-2">
+        {/* Status-based buttons */}
+        <div className="flex gap-2 flex-wrap">
+          {visibleButtons.map((btn) => (
+            <a
+              key={btn.key}
+              href={toWhatsAppUrl(phone, btn.message)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 min-w-[140px] flex items-center justify-center gap-2 py-2.5 bg-[#25D366] hover:bg-[#1ebe5d] text-white text-xs font-semibold rounded-xl transition-colors"
+            >
+              {WA_ICON}
+              {btn.label}
+            </a>
+          ))}
+        </div>
+
+        {/* Delivery cost WhatsApp */}
+        {!showDeliveryInput ? (
+          <button
+            type="button"
+            onClick={() => setShowDeliveryInput(true)}
+            className="w-full flex items-center justify-center gap-2 py-2 border border-[#25D366]/40 text-[#25D366] hover:bg-[#25D366]/5 rounded-xl text-xs font-medium transition-colors cursor-pointer"
+          >
+            {WA_ICON}
+            Enviar costo de delivery
+          </button>
+        ) : (
+          <div className="flex gap-2 items-center">
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={deliveryAmount}
+              onChange={(e) => setDeliveryAmount(e.target.value)}
+              className="flex-1 border border-gris-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#25D366]/30 focus:border-[#25D366]"
+              placeholder="Monto en Bs"
+              autoFocus
+            />
+            {deliveryAmount && Number(deliveryAmount) > 0 ? (
+              <a
+                href={toWhatsAppUrl(phone, messages.deliveryCost)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 px-4 py-2 bg-[#25D366] hover:bg-[#1ebe5d] text-white text-xs font-semibold rounded-lg transition-colors whitespace-nowrap"
+              >
+                {WA_ICON}
+                Enviar
+              </a>
+            ) : (
+              <span className="px-4 py-2 bg-gray-200 text-gray-400 text-xs font-semibold rounded-lg whitespace-nowrap">
+                Enviar
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => { setShowDeliveryInput(false); setDeliveryAmount(''); }}
+              className="p-2 text-gris hover:text-negro transition-colors cursor-pointer"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function DeliveryCostSection({ order, onRefresh }) {
+  const [freeLoading, setFreeLoading] = useState(false);
+
+  const hasCost = order.deliveryCostBs > 0;
+  const isFree = order.deliveryFree;
+
+  async function handleToggleFree() {
+    setFreeLoading(true);
+    try {
+      await setDeliveryFree(order._id, !isFree);
+      onRefresh?.();
+    } catch (err) {
+      alert('Error: ' + (err.message || 'Error desconocido'));
+    } finally {
+      setFreeLoading(false);
+    }
+  }
+
+  if (order.status === 'cancelled') return null;
+
+  return (
+    <section>
+      <h3 className="font-heading font-bold text-sm text-negro mb-2">Costo de delivery</h3>
+
+      {isFree ? (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 space-y-1">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span className="text-sm font-semibold text-blue-700">Delivery gratis</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleToggleFree}
+              disabled={freeLoading}
+              className="text-xs text-blue-600 hover:underline font-medium cursor-pointer disabled:opacity-50"
+            >
+              {freeLoading ? '...' : 'Quitar'}
+            </button>
+          </div>
+          <p className="text-[10px] text-blue-600">El cliente no paga delivery en este pedido</p>
+        </div>
+      ) : hasCost ? (
+        <div className="bg-green-50 border border-green-200 rounded-xl p-3 space-y-1">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span className="text-sm font-semibold text-green-700">
+                {Number(order.deliveryCostBs).toLocaleString('es-VE', { minimumFractionDigits: 2 })} Bs
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={handleToggleFree}
+              disabled={freeLoading}
+              className="text-xs text-blue-600 hover:underline font-medium cursor-pointer disabled:opacity-50"
+            >
+              {freeLoading ? '...' : 'Marcar gratis'}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={handleToggleFree}
+          disabled={freeLoading}
+          className="w-full flex items-center justify-center gap-2 py-2.5 border-2 border-dashed border-gris-border hover:border-blue-400 text-gris hover:text-blue-600 rounded-xl text-xs font-medium transition-colors cursor-pointer disabled:opacity-50"
+        >
+          {freeLoading ? '...' : 'Marcar delivery gratis'}
+        </button>
+      )}
     </section>
   );
 }
