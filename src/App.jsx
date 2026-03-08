@@ -8,6 +8,7 @@ import CatalogManager from './pages/CatalogManager';
 import InventoryManager from './pages/InventoryManager';
 import PokeWallet from './pages/PokeWallet';
 import Purchases from './pages/Purchases';
+import PromotionsManager from './pages/PromotionsManager';
 
 export default function App() {
   return (
@@ -25,6 +26,7 @@ export default function App() {
             <Route path="/inventory" element={<InventoryManager />} />
             <Route path="/wallet" element={<PokeWallet />} />
             <Route path="/purchases" element={<Purchases />} />
+            <Route path="/promotions" element={<PromotionsManager />} />
           </Routes>
         </main>
       </div>
