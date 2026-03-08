@@ -252,6 +252,26 @@ export default function OrderDetailModal({ order, open, onClose, onAdvance, onCa
             </div>
           </section>
 
+          {/* Promotion / Discount badge */}
+          {order.promotion?.name && (
+            <section className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center gap-2">
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-200 text-amber-800 uppercase tracking-wide">
+                Promo
+              </span>
+              <span className="text-sm font-semibold text-negro">{order.promotion.name}</span>
+              <span className="ml-auto text-sm font-bold text-naranja">{formatCurrency(order.promotion.promoPrice)}</span>
+            </section>
+          )}
+          {order.discountCode?.code && (
+            <section className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center gap-2">
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-green-200 text-green-800 uppercase tracking-wide">
+                Descuento
+              </span>
+              <span className="text-sm font-semibold text-negro">{order.discountCode.code} ({order.discountCode.percentage}%)</span>
+              <span className="ml-auto text-sm font-bold text-green-600">-{formatCurrency(order.discountCode.discountAmount)}</span>
+            </section>
+          )}
+
           {/* Totals + Delivery */}
           <section className="bg-gris-light rounded-xl p-3 space-y-2">
             <div className="flex justify-between text-sm">
